@@ -25,23 +25,17 @@ struct D3C2Request {
     bytes32 bytecodeHash;
     /// @dev After this block, the request is considered expired and reward can be claimed.
     uint256 expireAt;
-    /// @dev The calculated address needs to be lower than this bar to be worthy of the reward.
-    address bar;
     /// @dev The type of reward.
     RewardType rewardType;
-    /// @dev The address that will receive the refund.
-    address payable refundReceiver;
     /// @dev The reward amount for the request.
+    ///      For Ethers the unit will be `wei`.
     uint256 rewardAmount;
     /// @dev The reward token address.
     /// For ETH, this is Zero. Non-Zeros are reserved for ERC20 and future extensions.
     address rewardToken;
-}
 
-struct D3C2Response {
-    bytes32 requestId;
-    bytes32 salt;
-    address calculatedAddress;
+    /// @dev The address of the refund receiver.
+    address payable refundReceiver;
 }
 
 /// @title D3C2ImplV1
@@ -59,29 +53,25 @@ struct D3C2Response {
 contract D3C2ImplV1 is Initializable, ContextUpgradeable, OwnableUpgradeable {
     using SafeMath for uint256;
 
-    uint256 private comissionBasisPoints;
+    uint256 private comissionRateBasisPoints;
     address payable private commissionReceiver;
     // max to be two weeks in blocks
     uint256 private maxDeadlineBlockDuration;
 
     // TODO(xinbenlv): determine what's a good requestId structure;
     mapping(bytes32 /* RequestId */ => D3C2Request) private create2Requests;
-    mapping(bytes32 /* RequestId */ => address) private currentMinAddress;
-    mapping(bytes32 /* RequestId */ => bytes32) private currentWinningSalts;
+    mapping(bytes32 /* RequestId */ => bytes32) private currentBestSalt;
 
     event OnRegisterD3C2Request(
-        bytes32 indexed requestId,
-        address indexed factory,
-        bytes32 indexed bytecodeHash,
-        uint256 expireAt,
-        address bar,
-        address payable refundReceiver,
-        RewardType rewardType,
-        uint256 rewardAmount,
-        address rewardToken
+        bytes32 indexed requestId
     );
 
     event OnClearD3C2Request(bytes32 indexed requestId);
+    event OnNewSalt(
+        bytes32 indexed requestId, 
+        bytes32 indexed salt,
+        address indexed calculatedAddress
+    );
 
     event OnClaimD3C2Reward(
         bytes32 indexed requestId,
@@ -101,14 +91,35 @@ contract D3C2ImplV1 is Initializable, ContextUpgradeable, OwnableUpgradeable {
      * @dev Calculates the input salt for Create2 a given reward receiver address and raw salt.
      *      The purpose is to prevent front-running.
      * @param rewardReceiver The address of the reward receiver.
-     * @param rawSalt The raw salt used to calculate the address.
+     * @param sourceSalt The source salt for the input of compositeSalt.
      * @return The calculated salt.
      */
-    function _calculateCommittedSalt(
-        address payable rewardReceiver,
-        bytes32 rawSalt
+    function _computeSalt(
+        address rewardReceiver,
+        bytes32 sourceSalt
     ) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(rewardReceiver, rawSalt));
+        // Add "V1" to the pack to prevent collision with future versions.
+        return keccak256(abi.encodePacked(rewardReceiver, sourceSalt));
+    }
+
+    function _computeAddress(bytes32 requestId, bytes32 salt) internal view returns (address) {
+        D3C2Request memory _request = create2Requests[requestId];
+        return Create2.computeAddress(
+            salt,
+            _request.bytecodeHash,
+            _request.factory
+        );
+    }
+
+    function computeAddress(bytes32 requestId, bytes32 salt) public view returns (address) {
+        return _computeAddress(requestId, salt);
+    }
+
+    function computeSalt(
+        address sender,
+        bytes32 rawSalt
+    ) public pure returns (bytes32) {
+        return _computeSalt(sender, rawSalt);
     }
 
     /**
@@ -117,35 +128,46 @@ contract D3C2ImplV1 is Initializable, ContextUpgradeable, OwnableUpgradeable {
      */
     function _clearRequest(bytes32 requestId) internal {
         delete create2Requests[requestId];
-        delete currentMinAddress[requestId];
-        delete currentWinningSalts[requestId];
+        delete currentBestSalt[requestId];
         emit OnClearD3C2Request(requestId);
     }
 
-    function _calculateRequestId(
+    function _computeRequestId(
         D3C2Request memory _request
     ) internal pure returns (bytes32 requestId) {
         // TODO: consider if replay protection is needed
         return
             keccak256(
                 abi.encodePacked(
-                    // We include refundReceiver to prevent someone else from
-                    // front-running the request and make it impossible for
-                    // the requester to register their intended request.
-                    _request.refundReceiver,
                     _request.factory,
                     _request.bytecodeHash,
-                    // TODO consider if bar should be part of the requestId
-                    _request.bar,
-                    // TODO consider if expireAt should be part of the requestId
-                    _request.expireAt
+                    _request.expireAt,
+                    _request.refundReceiver
                 )
             );
+    }
+
+    // Also expose computeRequestId as a public function
+    function computeRequestId(
+        D3C2Request memory _request
+    ) public pure returns (bytes32 requestId) {
+        return _computeRequestId(_request);
+    }
+
+    function getFactory(bytes32 requestId) external view returns (address) {
+        return create2Requests[requestId].factory;
+    }
+
+    function getBytecodeHash(bytes32 requestId) external view returns (bytes32) {
+        return create2Requests[requestId].bytecodeHash;
     }
 
     function initialize() public initializer {
         __Context_init_unchained();
         __Ownable_init_unchained();
+        maxDeadlineBlockDuration = 604800 / 12; // 2 weeks 
+        commissionReceiver = payable(owner());
+        comissionRateBasisPoints = 500; // 5%
     }
 
     function setCommissionReceiver(address payable _commissionReceiver) external onlyOwner {
@@ -156,13 +178,13 @@ contract D3C2ImplV1 is Initializable, ContextUpgradeable, OwnableUpgradeable {
         return commissionReceiver;
     }
 
-    function setComissionBasisPoints(uint256 _comissionBasisPoints) external onlyOwner {
-        require(_comissionBasisPoints <= 10000, "D3C2: comission invalid");
-        comissionBasisPoints = _comissionBasisPoints;
+    function setComissionRateBasisPoints(uint256 _comissionRateBasisPoints) external onlyOwner {
+        require(_comissionRateBasisPoints <= 10000, "D3C2: comission invalid");
+        comissionRateBasisPoints = _comissionRateBasisPoints;
     }
 
-    function getComissionBasisPoints() external view returns (uint256) {
-        return comissionBasisPoints;
+    function getComissionRateBasisPoints() external view returns (uint256) {
+        return comissionRateBasisPoints;
     }
 
     function setMaxDeadlineBlockDuration(uint256 _maxDeadlineBlockDuration) external onlyOwner {
@@ -174,11 +196,9 @@ contract D3C2ImplV1 is Initializable, ContextUpgradeable, OwnableUpgradeable {
     }
 
     function registerCreate2Request(
-        D3C2Request memory _request
+        D3C2Request memory _request,
+        bytes32 _initSalt
     ) external payable returns (bytes32) {
-        uint256 reward = _request.rewardAmount;
-        uint256 commission = reward.mul(comissionBasisPoints).div(10000);
-        uint256 totalCharge = reward.add(commission);
         require(_request.expireAt > block.number, "D3C2: request expired");
         require(
             _request.expireAt <= block.number + maxDeadlineBlockDuration,
@@ -186,76 +206,85 @@ contract D3C2ImplV1 is Initializable, ContextUpgradeable, OwnableUpgradeable {
         );
         require(_request.refundReceiver != address(0), "D3C2: refundReceiver not set");
         require(_request.factory != address(0), "D3C2: factory not set");
-        // Make sure a bar is set
-        require(_request.bar != address(0), "D3C2: bar must be set");
+
         require(_request.rewardType == RewardType.ETH, "D3C2: only $ETH supported");
         require(_request.rewardToken == address(0), "D3C2: only $ETH supported");
+        require(msg.value == _request.rewardAmount, "D3C2: reward amount does not match");
 
-        require(msg.value >= totalCharge, "D3C2: reward amount does not match");
-        address payable payee = commissionReceiver;
-        require(payee != address(0), "D3C2: commissionReceiver not set");
-        payee.transfer(commission);
-
-        bytes32 requestId = _calculateRequestId(_request);
+        bytes32 requestId = _computeRequestId(_request);
         require(create2Requests[requestId].expireAt == 0, "D3C2: requestId already exists");
-        create2Requests[_calculateRequestId(_request)] = _request;
-
-        // Return the remainder to the sender
-        // TODO doublecheck if this is the right way for ContextUpgradaabe.
-        _request.refundReceiver.transfer(msg.value - totalCharge);
-
-        emit OnRegisterD3C2Request(
-            requestId,
-            _request.factory,
+        create2Requests[_computeRequestId(_request)] = _request;
+        currentBestSalt[requestId] = _initSalt;
+        
+        address calculatedAddress = Create2.computeAddress(
+            _initSalt,
             _request.bytecodeHash,
-            _request.expireAt,
-            _request.bar,
-            _request.refundReceiver,
-            _request.rewardType,
-            _request.rewardAmount,
-            _request.rewardToken
+            _request.factory
+        );
+
+        emit OnNewSalt(requestId, _initSalt, calculatedAddress);
+        emit OnRegisterD3C2Request(
+            requestId
         );
 
         return requestId;
     }
 
-    function registerResponse(D3C2Response memory _response) external payable {
-        D3C2Request memory request = create2Requests[_response.requestId];
+    function registerResponse(bytes32 requestId, bytes32 salt) external payable {
+        D3C2Request memory request = create2Requests[requestId];
         require(request.expireAt > block.number, "D3C2: expired");
-        require(request.bar > _response.calculatedAddress, "D3C2: address above bar");
-        require(
-            currentMinAddress[_response.requestId] > _response.calculatedAddress,
-            "D3C2: address not better"
-        );
-        require(currentWinningSalts[_response.salt] == 0, "D3C2: salt seen");
-        currentWinningSalts[_response.requestId] = _response.salt;
+        address lastBestAddress = _computeAddress(requestId, currentBestSalt[requestId]);
+        address newAddress = _computeAddress(requestId, salt);
+
+        require(newAddress <= address(uint160(lastBestAddress) / (2 ** 4)), 
+            "D3C2: At least one more zero");
+        currentBestSalt[requestId] = salt;
+        emit OnNewSalt(
+            requestId, 
+            salt, 
+            newAddress);
     }
 
-    function claimReward(bytes32 requestId, address payable winner, bytes32 rawSalt) external {
+    function claimReward(
+        bytes32 requestId, 
+        address payable winner, 
+        bytes32 sourceSalt) external {
         D3C2Request memory request = create2Requests[requestId];
         // Deadlined is passed
         require(request.expireAt <= block.number, "D3C2: request is not expired");
 
         // reveal the salt calculator
-        bytes32 salt = _calculateCommittedSalt(winner, rawSalt);
-        require(currentWinningSalts[requestId] == salt, "D3C2: salt not matched");
+        bytes32 salt = _computeSalt(winner, sourceSalt);
+        require(currentBestSalt[requestId] == salt, "D3C2: salt not matched");
 
+        address computedAddress = Create2.computeAddress(
+            salt,
+            request.bytecodeHash,
+            request.factory
+        );
         emit OnClaimD3C2Reward(
             requestId,
             winner,
             salt,
-            currentMinAddress[requestId],
+            computedAddress,
             request.rewardAmount,
             request.rewardToken
         );
 
         _clearRequest(requestId);
 
-        // THIS SHOULD ALREADY BE CHECKED IN registerCreate2Request but just in case.
         require(request.rewardType == RewardType.ETH, "D3C2: unknown reward type");
+        require(request.rewardToken == address(0), "D3C2: unknown reward token");
+        // use safeMath for uint256 commission = request.rewardAmount * comissionBasisPoints / 10000;
+        uint256 commission = request.rewardAmount.mul(comissionRateBasisPoints).div(10000);
 
-        // TODO deal with different reward types
-        winner.transfer(request.rewardAmount);
+        commissionReceiver.transfer(commission);
+        uint256 remainder = request.rewardAmount.sub(commission);
+        winner.transfer(remainder);
+    }
+
+    function getCurrentBestSalt(bytes32 requestId) external view returns (bytes32) {
+        return currentBestSalt[requestId];
     }
 
     // Allow requester to claim back the reward if no submission meet the bar yet.
@@ -265,7 +294,7 @@ contract D3C2ImplV1 is Initializable, ContextUpgradeable, OwnableUpgradeable {
         // Deadlined is passed MUST be checked otherwise the requester
         // could front-run the claimReward
         require(request.expireAt <= block.number, "D3C2: too soon");
-        require(currentWinningSalts[requestId] == 0, "D3C2: no winning salt");
+        require(currentBestSalt[requestId] == 0, "D3C2: no winning salt");
         _clearRequest(requestId);
 
         // TODO deal with different reward types

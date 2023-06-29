@@ -45,17 +45,18 @@ describe("D3C2ImplV1", function () {
             [],
             deterministicTestSigner
         );
-        const contractArtifact = await ethers.getContractFactory("TestingSum");
-        const bytecodeToDeploy = contractArtifact.bytecode;
+        const testSumContractArtifact = await ethers.getContractFactory("TestingSum");
+        const bytecodeToDeploy = testSumContractArtifact.bytecode;
         return {
             owner,
-            addr1, addr2,
+            addr1, addr2, addr3: signers[2],
+            addr4: signers[3],
             deterministicFactory, 
             logic, proxy,
             deterministicTestSigner,
             upgradable,
-            bytecodeToDeploy
-            
+            bytecodeToDeploy,
+            testSumContractArtifact
         };
     };
 
@@ -72,41 +73,38 @@ describe("D3C2ImplV1", function () {
                 owner,
                 addr1: solver,
                 addr2: commissionReceiver,
+                addr3: requester,
+                addr4: refundReceiver,
                 deterministicFactory,
                 upgradable,
                 deterministicTestSigner,
-                bytecodeToDeploy
+                bytecodeToDeploy,
+                testSumContractArtifact
             } = await loadFixture(deployFixture);
     
             const currentBlock = await ethers.provider.getBlockNumber();
-    
-            // Send an either to the testSender from owner
-            await owner.sendTransaction({
-                to: deterministicTestSigner.address,
-                value: ethers.utils.parseEther("2.0"),
-            });
             
             const deadline = 10;
             const rewardAmountInWei = ethers.utils.parseEther("1.0");
+
+            // const initSalt = ethers.utils.hexZeroPad(ethers.utils.hexlify(0), 32);
+            const initSalt = "0x3f68e79174daf15b50e15833babc8eb7743e730bb9606f922c48e95314c3905c";
+    
             const d3c2Request = 
                 {
                     factory: deterministicFactory.address,
                     bytecodeHash: ethers.utils.keccak256(bytecodeToDeploy),
                     expireAt: ethers.utils.hexlify(currentBlock + deadline),
+                    initSalt: initSalt,
                     rewardType: ethers.constants.Zero,
                     rewardAmount: rewardAmountInWei,
                     rewardToken: ethers.constants.AddressZero,
-                    refundReceiver: deterministicTestSigner.address,
+                    refundReceiver: refundReceiver.address,
                 };
             
-            // const initSalt = ethers.utils.hexZeroPad(ethers.utils.hexlify(0), 32);
-            const initSalt = "0x3f68e79174daf15b50e15833babc8eb7743e730bb9606f922c48e95314c3905c";
-    
-            let tx = (await upgradable.connect(deterministicTestSigner)
+            let tx = (await upgradable.connect(requester)
                 .registerCreate2Request(
                     d3c2Request,
-                    // uint256 init salt
-                    initSalt,
                     {
                         value: rewardAmountInWei,
                     }
@@ -235,6 +233,112 @@ describe("D3C2ImplV1", function () {
             expect(deployedAddress).to.equal(currentBestAddress);
             console.log("deployedAddress: ", deployedAddress);
             console.log("currentBestSalt: ", currentBestSalt);
+
+            const deployedContract = testSumContractArtifact.attach(deployedAddress);
+            expect(deployedContract).to.not.be.undefined;
+            expect(await deployedContract.value()).to.equal(0);
+            await deployedContract.add(1)
+            expect(await deployedContract.value()).to.equal(1);
+            await deployedContract.add(2)
+            expect(await deployedContract.value()).to.equal(3);
+        });
+
+        it("Should be able to withdraw a request that has no submission.", async function() {
+            const {
+                owner,
+                addr1: solver,
+                addr2: commissionReceiver,
+                addr3: requester,
+                addr4: refundReceiver,
+                deterministicFactory,
+                upgradable,
+                deterministicTestSigner,
+                bytecodeToDeploy,
+                testSumContractArtifact
+            } = await loadFixture(deployFixture);
+    
+            const currentBlock = await ethers.provider.getBlockNumber();
+            
+            const deadline = 10;
+            const rewardAmountInWei = ethers.utils.parseEther("1.0");
+
+            // const initSalt = ethers.utils.hexZeroPad(ethers.utils.hexlify(0), 32);
+            const initSalt = "0x3f68e79174daf15b50e15833babc8eb7743e730bb9606f922c48e95314c3905c";
+    
+            const d3c2Request = 
+                {
+                    factory: deterministicFactory.address,
+                    bytecodeHash: ethers.utils.keccak256(bytecodeToDeploy),
+                    expireAt: ethers.utils.hexlify(currentBlock + deadline),
+                    initSalt,
+                    rewardType: ethers.constants.Zero,
+                    rewardAmount: rewardAmountInWei,
+                    rewardToken: ethers.constants.AddressZero,
+                    refundReceiver: refundReceiver.address,
+                };
+    
+            let tx = (await upgradable.connect(requester)
+                .registerCreate2Request(
+                    d3c2Request,
+                    {
+                        value: rewardAmountInWei,
+                    }
+                ));
+            expect(await upgradable.getCommissionReceiver()).to.equal(owner.address);
+            await upgradable.setCommissionReceiver(commissionReceiver.address);
+            let rc = await tx.wait();
+            const event = rc.events?.find((e: any) => e.event === "OnRegisterD3C2Request");
+            expect(event).to.not.be.undefined;
+            const requestId = event?.args?.requestId;
+            expect(requestId).to.not.be.undefined;
+            const expectedRequestId = await upgradable.computeRequestId(
+                d3c2Request,
+            );
+            expect(requestId).to.equal(expectedRequestId);
+            
+            let i = 0;
+            let currentBestSalt = await upgradable.getCurrentBestSalt(
+                requestId,
+            );
+            expect(currentBestSalt).to.not.be.undefined;
+            expect(currentBestSalt).to.equal(
+                initSalt,
+            );
+            let savedFactory = await upgradable.getFactory(
+                requestId,
+            );
+            expect(savedFactory).to.not.be.undefined;
+            expect(savedFactory).to.equal(d3c2Request.factory);
+            let bytecodeHash = await upgradable.getBytecodeHash(
+                requestId,
+            );
+            expect(bytecodeHash).to.not.be.undefined;
+            expect(bytecodeHash).to.equal(
+                ethers.utils.keccak256(bytecodeToDeploy),
+            );
+    
+            let currentBestSourceSalt;
+            let currentBestAddress = ethers.utils.getCreate2Address
+            (
+                d3c2Request.factory,
+                currentBestSalt,
+                d3c2Request.bytecodeHash,
+            );
+            
+            expect(currentBestAddress).to.not.be.undefined;
+            const computedAddress = await upgradable.computeAddress(
+                requestId,
+                currentBestSalt,
+            );
+    
+            expect(currentBestAddress).to.equal(computedAddress);
+            mineUpTo(currentBlock + deadline + 1);
+            let oldBalance = await ethers.provider.getBalance(d3c2Request.refundReceiver);
+            let tx2 = await upgradable.connect(requester).requesterWithdraw(requestId);
+            let rc2 = await tx2.wait();
+            const event2 = rc2.events?.find((e: any) => e.event === "OnClearD3C2Request");
+            let newBalance = await ethers.provider.getBalance(d3c2Request.refundReceiver);
+            expect(newBalance.sub(oldBalance)).to.equal(rewardAmountInWei);
         });
     });
 
@@ -243,9 +347,11 @@ describe("D3C2ImplV1", function () {
             owner,
             addr1: solver,
             addr2: commissionReceiver,
+            addr3: requester,
+            addr4: refundReceiver,
             deterministicFactory,
             upgradable,
-            deterministicTestSigner
+            deterministicTestSigner,
         } = await loadFixture(deployFixture);
         
         const { contract:testingSum1 } = await deployByName(
@@ -272,21 +378,189 @@ describe("D3C2ImplV1", function () {
                 factory: deterministicFactory.address,
                 bytecodeHash: ethers.utils.keccak256(contractArtifact.bytecode),
                 expireAt: ethers.utils.hexlify(currentBlock + deadline),
+                initSalt: ethers.utils.hexZeroPad(ethers.utils.hexlify(0), 32),
                 rewardType: ethers.constants.Zero,
                 rewardAmount: ethers.constants.Zero,
                 rewardToken: ethers.constants.AddressZero,
-                refundReceiver: deterministicTestSigner.address,
+                refundReceiver: refundReceiver.address,
             };
         
         // const initSalt = ethers.utils.hexZeroPad(ethers.utils.hexlify(0), 32);
         const initSalt = "0x3f68e79174daf15b50e15833babc8eb7743e730bb9606f922c48e95314c3905c";
 
-        let tx = (await upgradable.connect(deterministicTestSigner)
+        let tx = (await upgradable.connect(requester)
             .registerCreate2Request(
-                d3c2Request,
-                // uint256 init salt
-                ethers.utils.hexZeroPad(ethers.utils.hexlify(0), 32)
+                d3c2Request
             ));
         expect(await upgradable.getCommissionReceiver()).to.equal(owner.address);
+    });
+
+
+    it("Should be able to set and read commission rate", async function() {
+        const {
+            owner,
+            addr1: solver,
+            addr2: commissionReceiver,
+            addr3: requester,
+            addr4: refundReceiver,
+            deterministicFactory,
+            upgradable,
+            deterministicTestSigner,
+        } = await loadFixture(deployFixture);
+        
+        const { contract:testingSum1 } = await deployByName(
+            ethers,
+            "TestingSum",
+            []
+        );
+
+        const contractName = "TestingSum";
+        const contractArtifact = await ethers.getContractFactory(contractName);
+        
+        const currentBlock = await ethers.provider.getBlockNumber();
+
+        // Send an either to the testSender from owner
+        await owner.sendTransaction({
+            to: deterministicTestSigner.address,
+            value: ethers.utils.parseEther("2.0"),
+        });
+        
+        const deadline = 10;
+        const rewardAmountInWei = ethers.utils.parseEther("1.0");
+        const d3c2Request = 
+            {
+                factory: deterministicFactory.address,
+                bytecodeHash: ethers.utils.keccak256(contractArtifact.bytecode),
+                expireAt: ethers.utils.hexlify(currentBlock + deadline),
+                initSalt: ethers.utils.hexZeroPad(ethers.utils.hexlify(0), 32),
+                rewardType: ethers.constants.Zero,
+                rewardAmount: ethers.constants.Zero,
+                rewardToken: ethers.constants.AddressZero,
+                refundReceiver: refundReceiver.address,
+            };
+        
+        // const initSalt = ethers.utils.hexZeroPad(ethers.utils.hexlify(0), 32);
+        const initSalt = "0x3f68e79174daf15b50e15833babc8eb7743e730bb9606f922c48e95314c3905c";
+
+        let tx = (await upgradable.connect(requester)
+            .registerCreate2Request(
+                d3c2Request
+            ));
+        await upgradable.setComissionRateBasisPoints(1000);
+        expect(await upgradable.getComissionRateBasisPoints()).to.equal(1000);
+    });
+
+    it("Should be able to set and get create2Requests", async function() {
+        const {
+            owner,
+            addr1: solver,
+            addr2: commissionReceiver,
+            addr3: requester,
+            addr4: refundReceiver,
+            deterministicFactory,
+            upgradable,
+            deterministicTestSigner,
+        } = await loadFixture(deployFixture);
+        
+        const { contract:testingSum1 } = await deployByName(
+            ethers,
+            "TestingSum",
+            []
+        );
+
+        const contractName = "TestingSum";
+        const contractArtifact = await ethers.getContractFactory(contractName);
+        
+        const currentBlock = await ethers.provider.getBlockNumber();
+
+        // Send an either to the testSender from owner
+        await owner.sendTransaction({
+            to: deterministicTestSigner.address,
+            value: ethers.utils.parseEther("2.0"),
+        });
+        
+        const deadline = 10;
+        const rewardAmountInWei = ethers.utils.parseEther("1.0");
+        const d3c2Request = 
+            {
+                factory: deterministicFactory.address,
+                bytecodeHash: ethers.utils.keccak256(contractArtifact.bytecode),
+                expireAt: ethers.utils.hexlify(currentBlock + deadline),
+                initSalt: ethers.utils.hexZeroPad(ethers.utils.hexlify(0), 32),
+                rewardType: ethers.constants.Zero,
+                rewardAmount: ethers.constants.Zero,
+                rewardToken: ethers.constants.AddressZero,
+                refundReceiver: refundReceiver.address,
+            };
+        
+        let tx = (await upgradable.connect(requester)
+            .registerCreate2Request(
+                d3c2Request
+            ));
+        let rc = await tx.wait();
+        const event = rc.events?.find((e: any) => e.event === "OnRegisterD3C2Request");
+        expect(event).to.not.be.undefined;
+        const requestId = event?.args?.requestId;
+        const retrievedRequest = await upgradable.getCreate2Request(requestId);
+        expect(retrievedRequest).to.not.be.undefined;
+        expect(retrievedRequest?.factory).to.equal(deterministicFactory.address);
+        expect(retrievedRequest?.bytecodeHash).to.equal(ethers.utils.keccak256(contractArtifact.bytecode));
+        expect(retrievedRequest?.expireAt).to.equal(ethers.utils.hexlify(currentBlock + deadline));
+        expect(retrievedRequest?.initSalt).to.equal(ethers.utils.hexZeroPad(ethers.utils.hexlify(0), 32));
+        expect(retrievedRequest?.rewardType).to.equal(ethers.constants.Zero);
+        expect(retrievedRequest?.rewardAmount).to.equal(ethers.constants.Zero);
+        expect(retrievedRequest?.rewardToken).to.equal(ethers.constants.AddressZero);
+        expect(retrievedRequest?.refundReceiver).to.equal(refundReceiver.address);
+    });
+
+
+    it("Should be able to set and get tMaxDeadlineBlockDuration", async function() {
+        const {
+            owner,
+            addr1: solver,
+            addr2: commissionReceiver,
+            addr3: requester,
+            addr4: refundReceiver,
+            deterministicFactory,
+            upgradable,
+            deterministicTestSigner,
+        } = await loadFixture(deployFixture);
+        
+        const { contract:testingSum1 } = await deployByName(
+            ethers,
+            "TestingSum",
+            []
+        );
+
+        const contractName = "TestingSum";
+        const contractArtifact = await ethers.getContractFactory(contractName);
+        
+        const currentBlock = await ethers.provider.getBlockNumber();
+
+        // Send an either to the testSender from owner
+        await owner.sendTransaction({
+            to: deterministicTestSigner.address,
+            value: ethers.utils.parseEther("2.0"),
+        });
+        
+        const deadline = 10;
+        const rewardAmountInWei = ethers.utils.parseEther("1.0");
+        const d3c2Request = 
+            {
+                factory: deterministicFactory.address,
+                bytecodeHash: ethers.utils.keccak256(contractArtifact.bytecode),
+                expireAt: ethers.utils.hexlify(currentBlock + deadline),
+                initSalt: ethers.utils.hexZeroPad(ethers.utils.hexlify(0), 32),
+                rewardType: ethers.constants.Zero,
+                rewardAmount: ethers.constants.Zero,
+                rewardToken: ethers.constants.AddressZero,
+                refundReceiver: refundReceiver.address,
+            };
+        
+        expect(await upgradable.connect(requester).getMaxDeadlineBlockDuration()).to.equal(604800 / 12);
+        await upgradable.connect(owner).setMaxDeadlineBlockDuration(100);
+        expect(await upgradable.connect(requester).getMaxDeadlineBlockDuration()).to.equal(100);
+
+    
     });
 });

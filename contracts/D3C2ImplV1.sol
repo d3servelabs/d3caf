@@ -24,6 +24,7 @@ struct D3C2Request {
     address factory;        // The address of the factory.
     bytes32 bytecodeHash;   // The hash of the bytecode.
     uint256 expireAt;       // After this block, the request is considered expired and reward can be claimed.
+    bytes32 initSalt;       // Initial salt
     RewardType rewardType;  // The type of reward.
     uint256 rewardAmount;   // The reward amount for the request. For Ethers the unit will be `wei`.
     address rewardToken;    // The reward token address. For ETH, this is Zero. Non-Zeros are reserved for ERC20 and future extensions.
@@ -268,12 +269,10 @@ contract D3C2ImplV1 is Initializable, ContextUpgradeable, OwnableUpgradeable {
     /**
      * @dev Registers a new D3C2 request.
      * @param _request The request information.
-     * @param _initSalt The initial salt value.
      * @return The request ID.
      */
     function registerCreate2Request(
-        D3C2Request memory _request,
-        bytes32 _initSalt
+        D3C2Request memory _request
     ) external payable returns (bytes32) {
         require(_request.expireAt > block.number, "D3C2: request expired");
         require(
@@ -291,15 +290,15 @@ contract D3C2ImplV1 is Initializable, ContextUpgradeable, OwnableUpgradeable {
         bytes32 requestId = _computeRequestId(_request);
         require(create2Requests[requestId].expireAt == 0, "D3C2: requestId already exists");
         create2Requests[_computeRequestId(_request)] = _request;
-        currentBestSalt[requestId] = _initSalt;
+        currentBestSalt[requestId] = _request.initSalt;
         
         address calculatedAddress = Create2.computeAddress(
-            _initSalt,
+            _request.initSalt,
             _request.bytecodeHash,
             _request.factory
         );
 
-        emit OnNewSalt(requestId, _initSalt, calculatedAddress);
+        emit OnNewSalt(requestId, _request.initSalt, calculatedAddress);
         emit OnRegisterD3C2Request(
             requestId
         );
@@ -378,7 +377,8 @@ contract D3C2ImplV1 is Initializable, ContextUpgradeable, OwnableUpgradeable {
         D3C2Request memory request = create2Requests[requestId];
 
         require(request.expireAt <= block.number, "D3C2: too soon");
-        require(currentBestSalt[requestId] == 0, "D3C2: no winning salt");
+        require(currentBestSalt[requestId] == 
+            create2Requests[requestId].initSalt, "D3C2: must have no submission");
         _clearRequest(requestId);
 
         request.refundReceiver.transfer(request.rewardAmount);

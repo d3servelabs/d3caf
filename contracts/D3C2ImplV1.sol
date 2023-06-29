@@ -80,6 +80,17 @@ contract D3C2ImplV1 is Initializable, ContextUpgradeable, OwnableUpgradeable {
     }
 
     /**
+     * @dev Initializes the contract.
+     */
+    function initialize() public initializer {
+        __Context_init_unchained();
+        __Ownable_init_unchained();
+        maxDeadlineBlockDuration = 604800 / 12; // 2 weeks 
+        commissionReceiver = payable(owner());
+        comissionRateBasisPoints = 500; // 5%
+    }
+
+    /**
      * @dev Calculates the input salt for Create2 a given reward receiver address and raw salt.
      *      The purpose is to prevent front-running.
      * @param rewardReceiver The address of the reward receiver.
@@ -188,14 +199,21 @@ contract D3C2ImplV1 is Initializable, ContextUpgradeable, OwnableUpgradeable {
     }
 
     /**
-     * @dev Initializes the contract.
+     * @dev Gets the current best salt for a request.
+     * @param requestId The request ID.
+     * @return The current best salt value.
      */
-    function initialize() public initializer {
-        __Context_init_unchained();
-        __Ownable_init_unchained();
-        maxDeadlineBlockDuration = 604800 / 12; // 2 weeks 
-        commissionReceiver = payable(owner());
-        comissionRateBasisPoints = 500; // 5%
+    function getCurrentBestSalt(bytes32 requestId) external view returns (bytes32) {
+        return currentBestSalt[requestId];
+    }
+
+    /**
+     * @dev Gets the request information for a given request ID.
+     * @param requestId The request ID.
+     * @return The request information.
+     */
+    function getCreate2Request(bytes32 requestId) external view returns (D3C2Request memory) {
+        return create2Requests[requestId];
     }
 
     /**
@@ -353,15 +371,6 @@ contract D3C2ImplV1 is Initializable, ContextUpgradeable, OwnableUpgradeable {
     }
 
     /**
-     * @dev Gets the current best salt for a request.
-     * @param requestId The request ID.
-     * @return The current best salt value.
-     */
-    function getCurrentBestSalt(bytes32 requestId) external view returns (bytes32) {
-        return currentBestSalt[requestId];
-    }
-
-    /**
      * @dev Allows the requester to claim back the reward if no submission meets the bar yet.
      * @param requestId The request ID.
      */
@@ -373,15 +382,6 @@ contract D3C2ImplV1 is Initializable, ContextUpgradeable, OwnableUpgradeable {
         _clearRequest(requestId);
 
         request.refundReceiver.transfer(request.rewardAmount);
-    }
-
-    /**
-     * @dev Gets the request information for a given request ID.
-     * @param requestId The request ID.
-     * @return The request information.
-     */
-    function getCreate2Request(bytes32 requestId) external view returns (D3C2Request memory) {
-        return create2Requests[requestId];
     }
 
     /**

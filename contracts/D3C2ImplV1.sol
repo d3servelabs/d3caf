@@ -16,51 +16,43 @@ enum RewardType {
     ERC20
 }
 
-/// @title D3C2Request
-/// @dev Represents a D3C2 request.
+/**
+ * @title D3C2Request
+ * @dev Represents a D3C2 request.
+ */
 struct D3C2Request {
-    /// @dev The address of the factory.
-    address factory;
-    /// @dev The hash of the bytecode.
-    bytes32 bytecodeHash;
-    /// @dev After this block, the request is considered expired and reward can be claimed.
-    uint256 expireAt;
-    /// @dev The type of reward.
-    RewardType rewardType;
-    /// @dev The reward amount for the request.
-    ///      For Ethers the unit will be `wei`.
-    uint256 rewardAmount;
-    /// @dev The reward token address.
-    /// For ETH, this is Zero. Non-Zeros are reserved for ERC20 and future extensions.
-    address rewardToken;
-
-    /// @dev The address of the refund receiver.
-    address payable refundReceiver;
+    address factory;        // The address of the factory.
+    bytes32 bytecodeHash;   // The hash of the bytecode.
+    uint256 expireAt;       // After this block, the request is considered expired and reward can be claimed.
+    RewardType rewardType;  // The type of reward.
+    uint256 rewardAmount;   // The reward amount for the request. For Ethers the unit will be `wei`.
+    address rewardToken;    // The reward token address. For ETH, this is Zero. Non-Zeros are reserved for ERC20 and future extensions.
+    address payable refundReceiver;  // The address of the refund receiver.
 }
 
-/// @title D3C2ImplV1
-/// @notice This contract implements the D3C2 mechanism.
-/// @dev Economic Mechanism:
-/// - Criteria: any GeneratedAddress **lower than** the Bar is eligible for reward.
-///   - The commission rate is a parameter, currently 0%.
-///   - The commission is paid to the commissionRecipient.
-///   - Currently supports ETH and hopes to support ERC20 in the future by extending the type.
-/// - When there is no submission that meets the criteria before the deadline,
-///   the reward is returned to the submitter.
-/// - When there are multiple submissions before the deadline that meet the criteria,
-///   the submitter who submitted the lowest address is considered "the winner"
-///   and can claim the reward.
+/**
+ * @title D3C2ImplV1
+ * @notice This contract implements the D3C2 mechanism.
+ * @dev Economic Mechanism:
+ * - Criteria: any GeneratedAddress **lower than** the Bar is eligible for reward.
+ *   - The commission rate is a parameter, currently 0%.
+ *   - The commission is paid to the commissionRecipient.
+ *   - Currently supports ETH and hopes to support ERC20 in the future by extending the type.
+ * - When there is no submission that meets the criteria before the deadline,
+ *   the reward is returned to the submitter.
+ * - When there are multiple submissions before the deadline that meet the criteria,
+ *   the submitter who submitted the lowest address is considered "the winner"
+ *   and can claim the reward.
+ */
 contract D3C2ImplV1 is Initializable, ContextUpgradeable, OwnableUpgradeable {
     using SafeMath for uint256;
 
-    uint256 private comissionRateBasisPoints;
-    address payable private commissionReceiver;
-    // max to be two weeks in blocks
-    uint256 private maxDeadlineBlockDuration;
+    uint256 private comissionRateBasisPoints;    // The commission basis points (0-10000).
+    address payable private commissionReceiver;  // The address of the commission receiver.
+    uint256 private maxDeadlineBlockDuration;  // The maximum duration in blocks for a request deadline.
 
-    // TODO(xinbenlv): determine what's a good requestId structure;
-    mapping(bytes32 /* RequestId */ => D3C2Request) private create2Requests;
-    mapping(bytes32 /* RequestId */ => bytes32) private currentBestSalt;
+    mapping(bytes32 /* RequestId */ => D3C2Request) private create2Requests;  // Mapping to store D3C2 requests.
+    mapping(bytes32 /* RequestId */ => bytes32) private currentBestSalt;      // Mapping to store the current best salt for each request.
 
     event OnRegisterD3C2Request(
         bytes32 indexed requestId
@@ -102,6 +94,12 @@ contract D3C2ImplV1 is Initializable, ContextUpgradeable, OwnableUpgradeable {
         return keccak256(abi.encodePacked(rewardReceiver, sourceSalt));
     }
 
+    /**
+     * @dev Computes the Create2 address based on the request ID and salt.
+     * @param requestId The ID of the request.
+     * @param salt The salt value.
+     * @return The computed Create2 address.
+     */
     function _computeAddress(bytes32 requestId, bytes32 salt) internal view returns (address) {
         D3C2Request memory _request = create2Requests[requestId];
         return Create2.computeAddress(
@@ -111,14 +109,23 @@ contract D3C2ImplV1 is Initializable, ContextUpgradeable, OwnableUpgradeable {
         );
     }
 
+    /**
+     * @dev Computes the Create2 address based on the request ID and salt.
+     * @param requestId The ID of the request.
+     * @param salt The salt value.
+     * @return The computed Create2 address.
+     */
     function computeAddress(bytes32 requestId, bytes32 salt) public view returns (address) {
         return _computeAddress(requestId, salt);
     }
 
-    function computeSalt(
-        address sender,
-        bytes32 rawSalt
-    ) public pure returns (bytes32) {
+    /**
+     * @dev Computes the salt based on the reward receiver and raw salt.
+     * @param sender The address of the sender.
+     * @param rawSalt The raw salt value.
+     * @return The computed salt.
+     */
+    function computeSalt(address sender, bytes32 rawSalt) public pure returns (bytes32) {
         return _computeSalt(sender, rawSalt);
     }
 
@@ -132,10 +139,14 @@ contract D3C2ImplV1 is Initializable, ContextUpgradeable, OwnableUpgradeable {
         emit OnClearD3C2Request(requestId);
     }
 
+    /**
+     * @dev Computes the request ID based on the request information.
+     * @param _request The request information.
+     * @return requestId The computed request ID.
+     */
     function _computeRequestId(
         D3C2Request memory _request
     ) internal pure returns (bytes32 requestId) {
-        // TODO: consider if replay protection is needed
         return
             keccak256(
                 abi.encodePacked(
@@ -147,21 +158,38 @@ contract D3C2ImplV1 is Initializable, ContextUpgradeable, OwnableUpgradeable {
             );
     }
 
-    // Also expose computeRequestId as a public function
+    /**
+     * @dev Computes the request ID based on the request information.
+     * @param _request The request information.
+     * @return requestId The computed request ID.
+     */
     function computeRequestId(
         D3C2Request memory _request
     ) public pure returns (bytes32 requestId) {
         return _computeRequestId(_request);
     }
 
+    /**
+     * @dev Gets the factory address for a request.
+     * @param requestId The request ID.
+     * @return The factory address.
+     */
     function getFactory(bytes32 requestId) external view returns (address) {
         return create2Requests[requestId].factory;
     }
 
+    /**
+     * @dev Gets the bytecode hash for a request.
+     * @param requestId The request ID.
+     * @return The bytecode hash.
+     */
     function getBytecodeHash(bytes32 requestId) external view returns (bytes32) {
         return create2Requests[requestId].bytecodeHash;
     }
 
+    /**
+     * @dev Initializes the contract.
+     */
     function initialize() public initializer {
         __Context_init_unchained();
         __Ownable_init_unchained();
@@ -170,31 +198,61 @@ contract D3C2ImplV1 is Initializable, ContextUpgradeable, OwnableUpgradeable {
         comissionRateBasisPoints = 500; // 5%
     }
 
+    /**
+     * @dev Sets the commission receiver address.
+     * @param _commissionReceiver The address of the commission receiver.
+     */
     function setCommissionReceiver(address payable _commissionReceiver) external onlyOwner {
         commissionReceiver = _commissionReceiver;
     }
 
+    /**
+     * @dev Gets the commission receiver address.
+     * @return The address of the commission receiver.
+     */
     function getCommissionReceiver() external view returns (address payable) {
         return commissionReceiver;
     }
 
+    /**
+     * @dev Sets the commission rate basis points.
+     * @param _comissionRateBasisPoints The commission basis points.
+     */
     function setComissionRateBasisPoints(uint256 _comissionRateBasisPoints) external onlyOwner {
         require(_comissionRateBasisPoints <= 10000, "D3C2: comission invalid");
         comissionRateBasisPoints = _comissionRateBasisPoints;
     }
 
+    /**
+     * @dev Gets the commission basis points.
+     * @return The commission basis points.
+     */
     function getComissionRateBasisPoints() external view returns (uint256) {
         return comissionRateBasisPoints;
     }
 
+    /**
+     * @dev Sets the maximum deadline block duration.
+     * @param _maxDeadlineBlockDuration The maximum deadline block duration.
+     */
     function setMaxDeadlineBlockDuration(uint256 _maxDeadlineBlockDuration) external onlyOwner {
         maxDeadlineBlockDuration = _maxDeadlineBlockDuration;
     }
 
+    /**
+     * @dev Gets the maximum deadline block duration.
+     * @return The maximum deadline block duration.
+     */
     function getMaxDeadlineBlockDuration() external view returns (uint256) {
         return maxDeadlineBlockDuration;
     }
 
+    /**
+     * @dev Registers a new D3C2 request.
+     * @param _request The request information.
+     * @param _initSalt The initial salt value.
+     * @return The request ID.
+     */
     function registerCreate2Request(
         D3C2Request memory _request,
         bytes32 _initSalt
@@ -209,6 +267,7 @@ contract D3C2ImplV1 is Initializable, ContextUpgradeable, OwnableUpgradeable {
 
         require(_request.rewardType == RewardType.ETH, "D3C2: only $ETH supported");
         require(_request.rewardToken == address(0), "D3C2: only $ETH supported");
+        
         require(msg.value == _request.rewardAmount, "D3C2: reward amount does not match");
 
         bytes32 requestId = _computeRequestId(_request);
@@ -230,6 +289,11 @@ contract D3C2ImplV1 is Initializable, ContextUpgradeable, OwnableUpgradeable {
         return requestId;
     }
 
+    /**
+     * @dev Registers a response for a request.
+     * @param requestId The request ID.
+     * @param salt The salt value.
+     */
     function registerResponse(bytes32 requestId, bytes32 salt) external payable {
         D3C2Request memory request = create2Requests[requestId];
         require(request.expireAt > block.number, "D3C2: expired");
@@ -245,15 +309,20 @@ contract D3C2ImplV1 is Initializable, ContextUpgradeable, OwnableUpgradeable {
             newAddress);
     }
 
+    /**
+     * @dev Claims the reward for a request.
+     * @param requestId The request ID.
+     * @param winner The address of the winner.
+     * @param sourceSalt The source salt value.
+     */
     function claimReward(
         bytes32 requestId, 
         address payable winner, 
-        bytes32 sourceSalt) external {
+        bytes32 sourceSalt
+    ) external {
         D3C2Request memory request = create2Requests[requestId];
-        // Deadlined is passed
         require(request.expireAt <= block.number, "D3C2: request is not expired");
 
-        // reveal the salt calculator
         bytes32 salt = _computeSalt(winner, sourceSalt);
         require(currentBestSalt[requestId] == salt, "D3C2: salt not matched");
 
@@ -275,7 +344,7 @@ contract D3C2ImplV1 is Initializable, ContextUpgradeable, OwnableUpgradeable {
 
         require(request.rewardType == RewardType.ETH, "D3C2: unknown reward type");
         require(request.rewardToken == address(0), "D3C2: unknown reward token");
-        // use safeMath for uint256 commission = request.rewardAmount * comissionBasisPoints / 10000;
+        
         uint256 commission = request.rewardAmount.mul(comissionRateBasisPoints).div(10000);
 
         commissionReceiver.transfer(commission);
@@ -283,24 +352,34 @@ contract D3C2ImplV1 is Initializable, ContextUpgradeable, OwnableUpgradeable {
         winner.transfer(remainder);
     }
 
+    /**
+     * @dev Gets the current best salt for a request.
+     * @param requestId The request ID.
+     * @return The current best salt value.
+     */
     function getCurrentBestSalt(bytes32 requestId) external view returns (bytes32) {
         return currentBestSalt[requestId];
     }
 
-    // Allow requester to claim back the reward if no submission meet the bar yet.
+    /**
+     * @dev Allows the requester to claim back the reward if no submission meets the bar yet.
+     * @param requestId The request ID.
+     */
     function requesterWithdraw(bytes32 requestId) external {
         D3C2Request memory request = create2Requests[requestId];
 
-        // Deadlined is passed MUST be checked otherwise the requester
-        // could front-run the claimReward
         require(request.expireAt <= block.number, "D3C2: too soon");
         require(currentBestSalt[requestId] == 0, "D3C2: no winning salt");
         _clearRequest(requestId);
 
-        // TODO deal with different reward types
         request.refundReceiver.transfer(request.rewardAmount);
     }
 
+    /**
+     * @dev Gets the request information for a given request ID.
+     * @param requestId The request ID.
+     * @return The request information.
+     */
     function getCreate2Request(bytes32 requestId) external view returns (D3C2Request memory) {
         return create2Requests[requestId];
     }

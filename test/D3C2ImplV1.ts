@@ -3,6 +3,8 @@ import { ethers } from "hardhat";
 import { deployByName } from "../utils/deployUtil";
 import { expect } from "chai";
 import { D3C2RequestStruct } from "../typechain-types/contracts/D3C2ImplV1";
+import { Signer } from "ethers";
+import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 
 // Test for 
 describe("D3C2ImplV1", function () {
@@ -31,11 +33,26 @@ describe("D3C2ImplV1", function () {
         await proxy.deployed();
         
         let upgradable = await ethers.getContractAt("D3C2ImplV1", proxy.address);
+
         await upgradable.initialize(); // initialize the proxy
+        // deterministic test wallet as sender
+        const testSigner = ethers.Wallet.fromMnemonic(
+            "test test test test test test test test test test test junk"
+        ).connect(ethers.provider);
+
+        const { contract: factory } = await deployByName(
+            ethers,
+            "TestingCreate2Deployer",
+            [],
+            testSigner
+        );
+
         return {
             owner,
             addr1, addr2,
+            factory, 
             logic, proxy,
+            testSigner,
             upgradable
         };
     };
@@ -52,7 +69,9 @@ describe("D3C2ImplV1", function () {
             owner,
             addr1: solver,
             addr2: commissionReceiver,
+            factory,
             upgradable,
+            testSigner
         } = await loadFixture(deployFixture);
         
         const { contract:testingSum1 } = await deployByName(
@@ -65,14 +84,11 @@ describe("D3C2ImplV1", function () {
         const contractArtifact = await ethers.getContractFactory(contractName);
         
         const currentBlock = await ethers.provider.getBlockNumber();
-        // deterministic test wallet as sender
-        const testSender = ethers.Wallet.fromMnemonic(
-            "test test test test test test test test test test test junk"
-        ).connect(ethers.provider);
+
         
         // Send an either to the testSender from owner
         await owner.sendTransaction({
-            to: testSender.address,
+            to: testSigner.address,
             value: ethers.utils.parseEther("2.0"),
         });
         
@@ -80,20 +96,23 @@ describe("D3C2ImplV1", function () {
         const rewardAmountInWei = ethers.utils.parseEther("1.0");
         const d3c2Request = 
             {
-                factory: testSender.address,
+                factory: factory.address,
                 bytecodeHash: ethers.utils.keccak256(contractArtifact.bytecode),
                 expireAt: ethers.utils.hexlify(currentBlock + deadline),
                 rewardType: ethers.constants.Zero,
                 rewardAmount: rewardAmountInWei,
                 rewardToken: ethers.constants.AddressZero,
-                refundReceiver: testSender.address,
+                refundReceiver: testSigner.address,
             };
         
-        let tx = (await upgradable.connect(testSender)
+        // const initSalt = ethers.utils.hexZeroPad(ethers.utils.hexlify(0), 32);
+        const initSalt = "0x3f68e79174daf15b50e15833babc8eb7743e730bb9606f922c48e95314c3905c";
+
+        let tx = (await upgradable.connect(testSigner)
             .registerCreate2Request(
                 d3c2Request,
                 // uint256 init salt
-                ethers.utils.hexZeroPad(ethers.utils.hexlify(0), 32),
+                initSalt,
                 {
                     value: rewardAmountInWei,
                 }
@@ -116,13 +135,13 @@ describe("D3C2ImplV1", function () {
         );
         expect(currentBestSalt).to.not.be.undefined;
         expect(currentBestSalt).to.equal(
-            ethers.utils.hexZeroPad(ethers.utils.hexlify(0), 32),
+            initSalt,
         );
-        let factory = await upgradable.getFactory(
+        let savedFactory = await upgradable.getFactory(
             requestId,
         );
-        expect(factory).to.not.be.undefined;
-        expect(factory).to.equal(testSender.address);
+        expect(savedFactory).to.not.be.undefined;
+        expect(savedFactory).to.equal(d3c2Request.factory);
         let bytecodeHash = await upgradable.getBytecodeHash(
             requestId,
         );
@@ -157,23 +176,25 @@ describe("D3C2ImplV1", function () {
 
             const newAddress = ethers.utils.getCreate2Address
                 (
-                    factory,
+                    d3c2Request.factory,
                     newSalt,
                     bytecodeHash,
                 );
             // if newAddress is 16 times smaller or equal to currentBestAddress
             if (ethers.BigNumber.from(newAddress)
-                .lte(ethers.BigNumber.from(currentBestAddress).div(256))) {
+                .lte(ethers.BigNumber.from(currentBestAddress).div(16))) {
                 currentBestAddress = newAddress;
                 currentBestSalt = newSalt;
                 currentBestSourceSalt = newSourceSalt;
                 break;
+            } else {
+                // console.log(`${i} newAddress: `, newAddress, "current best: ", currentBestAddress);
             }
             i++;
         }
 
         const oldCommissionReceiverBalance = await ethers.provider.getBalance(commissionReceiver.address);
-        let tx1 = await upgradable.connect(testSender).registerResponse(
+        let tx1 = await upgradable.connect(testSigner).registerResponse(
             requestId,
             currentBestSalt,
         );
@@ -185,7 +206,7 @@ describe("D3C2ImplV1", function () {
         mineUpTo(ethers.BigNumber.from(d3c2Request.expireAt).add(1).toNumber());
         let oldBalance = await ethers.provider.getBalance(solver.address);
 
-        let tx2 = await upgradable.connect(testSender).claimReward(
+        let tx2 = await upgradable.connect(testSigner).claimReward(
             requestId,
             solver.address,
             currentBestSourceSalt,
@@ -206,6 +227,19 @@ describe("D3C2ImplV1", function () {
             d3c2Request.rewardAmount.mul(
                 ethers.BigNumber.from(10000).sub(commissionRateBasisPoint)).div(10000)
             );
-
+        
+        let tx3 = await factory.connect(testSigner).deploy(
+            currentBestSalt,
+            contractArtifact.bytecode
+        );
+        
+        let rc3 = await tx3.wait();
+        const event3 = rc3.events?.find((e: any) => e.event === "OnDeploy");
+        expect(event3).to.not.be.undefined;
+        const deployedAddress = event3?.args?.addr;
+        expect(deployedAddress).to.not.be.undefined;
+        expect(deployedAddress).to.equal(currentBestAddress);
+        console.log("deployedAddress: ", deployedAddress);
+        console.log("currentBestSalt: ", currentBestSalt);
     });
 });

@@ -1,6 +1,6 @@
 {
   "name": "d3c2",
-  "author": "Zainan Victor Zhou <d3c2@d3serve.xyz>",
+  "author": "Zainan Victor Zhou <team@d3serve.xyz>",
   "scripts": {
     "test": "npx hardhat test"
   },

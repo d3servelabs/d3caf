@@ -2,19 +2,19 @@ import { loadFixture, mineUpTo} from "@nomicfoundation/hardhat-network-helpers";
 import { ethers } from "hardhat";
 import { deployByName } from "../utils/deployUtil";
 import { expect } from "chai";
-import { D3C2RequestStruct } from "../typechain-types/contracts/D3C2ImplV1";
+import { D3CAFRequestStruct } from "../typechain-types/contracts/D3CAFImplV1";
 import { Signer } from "ethers";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 
 // Test for 
-describe("D3C2ImplV1", function () {
+describe("D3CAFImplV1", function () {
     // deployFixture 
     async function deployFixture() {
         const [owner, addr1, addr2] = await ethers.getSigners();
         const signers = await ethers.getSigners();
         const { contract:logic } = await deployByName(
             ethers,
-            "D3C2ImplV1",
+            "D3CAFImplV1",
             []
         );
 
@@ -31,7 +31,7 @@ describe("D3C2ImplV1", function () {
 
         await proxy.deployed();
         
-        let upgradable = await ethers.getContractAt("D3C2ImplV1", proxy.address);
+        let upgradable = await ethers.getContractAt("D3CAFImplV1", proxy.address);
 
         await upgradable.initialize(); // initialize the proxy
         // deterministic test wallet as sender
@@ -90,7 +90,7 @@ describe("D3C2ImplV1", function () {
             // const initSalt = ethers.utils.hexZeroPad(ethers.utils.hexlify(0), 32);
             const initSalt = "0x3f68e79174daf15b50e15833babc8eb7743e730bb9606f922c48e95314c3905c";
     
-            const d3c2Request = 
+            const D3CAFRequest = 
                 {
                     factory: deterministicFactory.address,
                     bytecodeHash: ethers.utils.keccak256(bytecodeToDeploy),
@@ -104,7 +104,7 @@ describe("D3C2ImplV1", function () {
             
             let tx = (await upgradable.connect(requester)
                 .registerCreate2Request(
-                    d3c2Request,
+                    D3CAFRequest,
                     {
                         value: rewardAmountInWei,
                     }
@@ -112,12 +112,12 @@ describe("D3C2ImplV1", function () {
             expect(await upgradable.getCommissionReceiver()).to.equal(owner.address);
             await upgradable.setCommissionReceiver(commissionReceiver.address);
             let rc = await tx.wait();
-            const event = rc.events?.find((e: any) => e.event === "OnRegisterD3C2Request");
+            const event = rc.events?.find((e: any) => e.event === "OnRegisterD3CAFRequest");
             expect(event).to.not.be.undefined;
             const requestId = event?.args?.requestId;
             expect(requestId).to.not.be.undefined;
             const expectedRequestId = await upgradable.computeRequestId(
-                d3c2Request,
+                D3CAFRequest,
             );
             expect(requestId).to.equal(expectedRequestId);
             
@@ -133,7 +133,7 @@ describe("D3C2ImplV1", function () {
                 requestId,
             );
             expect(savedFactory).to.not.be.undefined;
-            expect(savedFactory).to.equal(d3c2Request.factory);
+            expect(savedFactory).to.equal(D3CAFRequest.factory);
             let bytecodeHash = await upgradable.getBytecodeHash(
                 requestId,
             );
@@ -145,9 +145,9 @@ describe("D3C2ImplV1", function () {
             let currentBestSourceSalt;
             let currentBestAddress = ethers.utils.getCreate2Address
             (
-                d3c2Request.factory,
+                D3CAFRequest.factory,
                 currentBestSalt,
-                d3c2Request.bytecodeHash,
+                D3CAFRequest.bytecodeHash,
             );
             
             expect(currentBestAddress).to.not.be.undefined;
@@ -168,7 +168,7 @@ describe("D3C2ImplV1", function () {
     
                 const newAddress = ethers.utils.getCreate2Address
                     (
-                        d3c2Request.factory,
+                        D3CAFRequest.factory,
                         newSalt,
                         bytecodeHash,
                     );
@@ -195,7 +195,7 @@ describe("D3C2ImplV1", function () {
             const event1 = rc1.events?.find((e: any) => e.event === "OnNewSalt");
             expect(event1).to.not.be.undefined;
             
-            mineUpTo(ethers.BigNumber.from(d3c2Request.expireAt).add(1).toNumber());
+            mineUpTo(ethers.BigNumber.from(D3CAFRequest.expireAt).add(1).toNumber());
             let oldBalance = await ethers.provider.getBalance(solver.address);
     
             let tx2 = await upgradable.connect(deterministicTestSigner).claimReward(
@@ -204,7 +204,7 @@ describe("D3C2ImplV1", function () {
                 currentBestSourceSalt,
             );
             let rc2 = await tx2.wait();
-            const event2 = rc2.events?.find((e: any) => e.event === "OnClaimD3C2Reward");
+            const event2 = rc2.events?.find((e: any) => e.event === "OnClaimD3CAFReward");
             expect(event2).to.not.be.undefined;
             // check that reward ethers are transfered to solver
             const newBalance = await ethers.provider.getBalance(solver.address);
@@ -213,10 +213,10 @@ describe("D3C2ImplV1", function () {
                 await upgradable.getComissionRateBasisPoints();
             expect(commissionRateBasisPoint).to.equal(500);
             const newCommissionReceiverBalance = await ethers.provider.getBalance(commissionReceiver.address);
-            const expectedCommission = d3c2Request.rewardAmount.mul(commissionRateBasisPoint).div(10000);
+            const expectedCommission = D3CAFRequest.rewardAmount.mul(commissionRateBasisPoint).div(10000);
             expect(newCommissionReceiverBalance.sub(oldCommissionReceiverBalance)).to.equal(expectedCommission);
             expect(newBalance.sub(oldBalance)).to.equal(
-                d3c2Request.rewardAmount.mul(
+                D3CAFRequest.rewardAmount.mul(
                     ethers.BigNumber.from(10000).sub(commissionRateBasisPoint)).div(10000)
                 );
             
@@ -265,7 +265,7 @@ describe("D3C2ImplV1", function () {
             // const initSalt = ethers.utils.hexZeroPad(ethers.utils.hexlify(0), 32);
             const initSalt = "0x3f68e79174daf15b50e15833babc8eb7743e730bb9606f922c48e95314c3905c";
     
-            const d3c2Request = 
+            const D3CAFRequest = 
                 {
                     factory: deterministicFactory.address,
                     bytecodeHash: ethers.utils.keccak256(bytecodeToDeploy),
@@ -279,7 +279,7 @@ describe("D3C2ImplV1", function () {
     
             let tx = (await upgradable.connect(requester)
                 .registerCreate2Request(
-                    d3c2Request,
+                    D3CAFRequest,
                     {
                         value: rewardAmountInWei,
                     }
@@ -287,12 +287,12 @@ describe("D3C2ImplV1", function () {
             expect(await upgradable.getCommissionReceiver()).to.equal(owner.address);
             await upgradable.setCommissionReceiver(commissionReceiver.address);
             let rc = await tx.wait();
-            const event = rc.events?.find((e: any) => e.event === "OnRegisterD3C2Request");
+            const event = rc.events?.find((e: any) => e.event === "OnRegisterD3CAFRequest");
             expect(event).to.not.be.undefined;
             const requestId = event?.args?.requestId;
             expect(requestId).to.not.be.undefined;
             const expectedRequestId = await upgradable.computeRequestId(
-                d3c2Request,
+                D3CAFRequest,
             );
             expect(requestId).to.equal(expectedRequestId);
             
@@ -308,7 +308,7 @@ describe("D3C2ImplV1", function () {
                 requestId,
             );
             expect(savedFactory).to.not.be.undefined;
-            expect(savedFactory).to.equal(d3c2Request.factory);
+            expect(savedFactory).to.equal(D3CAFRequest.factory);
             let bytecodeHash = await upgradable.getBytecodeHash(
                 requestId,
             );
@@ -320,9 +320,9 @@ describe("D3C2ImplV1", function () {
             let currentBestSourceSalt;
             let currentBestAddress = ethers.utils.getCreate2Address
             (
-                d3c2Request.factory,
+                D3CAFRequest.factory,
                 currentBestSalt,
-                d3c2Request.bytecodeHash,
+                D3CAFRequest.bytecodeHash,
             );
             
             expect(currentBestAddress).to.not.be.undefined;
@@ -333,11 +333,11 @@ describe("D3C2ImplV1", function () {
     
             expect(currentBestAddress).to.equal(computedAddress);
             mineUpTo(currentBlock + deadline + 1);
-            let oldBalance = await ethers.provider.getBalance(d3c2Request.refundReceiver);
+            let oldBalance = await ethers.provider.getBalance(D3CAFRequest.refundReceiver);
             let tx2 = await upgradable.connect(requester).requesterWithdraw(requestId);
             let rc2 = await tx2.wait();
-            const event2 = rc2.events?.find((e: any) => e.event === "OnClearD3C2Request");
-            let newBalance = await ethers.provider.getBalance(d3c2Request.refundReceiver);
+            const event2 = rc2.events?.find((e: any) => e.event === "OnClearD3CAFRequest");
+            let newBalance = await ethers.provider.getBalance(D3CAFRequest.refundReceiver);
             expect(newBalance.sub(oldBalance)).to.equal(rewardAmountInWei);
         });
     });
@@ -373,7 +373,7 @@ describe("D3C2ImplV1", function () {
         
         const deadline = 10;
         const rewardAmountInWei = ethers.utils.parseEther("1.0");
-        const d3c2Request = 
+        const D3CAFRequest = 
             {
                 factory: deterministicFactory.address,
                 bytecodeHash: ethers.utils.keccak256(contractArtifact.bytecode),
@@ -390,7 +390,7 @@ describe("D3C2ImplV1", function () {
 
         let tx = (await upgradable.connect(requester)
             .registerCreate2Request(
-                d3c2Request
+                D3CAFRequest
             ));
         expect(await upgradable.getCommissionReceiver()).to.equal(owner.address);
     });
@@ -427,7 +427,7 @@ describe("D3C2ImplV1", function () {
         
         const deadline = 10;
         const rewardAmountInWei = ethers.utils.parseEther("1.0");
-        const d3c2Request = 
+        const D3CAFRequest = 
             {
                 factory: deterministicFactory.address,
                 bytecodeHash: ethers.utils.keccak256(contractArtifact.bytecode),
@@ -444,7 +444,7 @@ describe("D3C2ImplV1", function () {
 
         let tx = (await upgradable.connect(requester)
             .registerCreate2Request(
-                d3c2Request
+                D3CAFRequest
             ));
         await upgradable.setComissionRateBasisPoints(1000);
         expect(await upgradable.getComissionRateBasisPoints()).to.equal(1000);
@@ -481,7 +481,7 @@ describe("D3C2ImplV1", function () {
         
         const deadline = 10;
         const rewardAmountInWei = ethers.utils.parseEther("1.0");
-        const d3c2Request = 
+        const D3CAFRequest = 
             {
                 factory: deterministicFactory.address,
                 bytecodeHash: ethers.utils.keccak256(contractArtifact.bytecode),
@@ -495,10 +495,10 @@ describe("D3C2ImplV1", function () {
         
         let tx = (await upgradable.connect(requester)
             .registerCreate2Request(
-                d3c2Request
+                D3CAFRequest
             ));
         let rc = await tx.wait();
-        const event = rc.events?.find((e: any) => e.event === "OnRegisterD3C2Request");
+        const event = rc.events?.find((e: any) => e.event === "OnRegisterD3CAFRequest");
         expect(event).to.not.be.undefined;
         const requestId = event?.args?.requestId;
         const retrievedRequest = await upgradable.getCreate2Request(requestId);
@@ -545,7 +545,7 @@ describe("D3C2ImplV1", function () {
         
         const deadline = 10;
         const rewardAmountInWei = ethers.utils.parseEther("1.0");
-        const d3c2Request = 
+        const D3CAFRequest = 
             {
                 factory: deterministicFactory.address,
                 bytecodeHash: ethers.utils.keccak256(contractArtifact.bytecode),

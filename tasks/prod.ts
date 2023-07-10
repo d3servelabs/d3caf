@@ -2,9 +2,9 @@ import { task } from "hardhat/config";
 import type { TaskArguments } from "hardhat/types";
 import { deployByName } from "../utils/deployUtil";
 
-task("d3ns-deploy-d3c2", "Destroy the D3C2V1 contract.")
+task("d3ns-deploy-D3CAF", "Destroy the D3CAFV1 contract.")
     .setAction(async function (taskArguments: TaskArguments, { ethers, run }) {
-        const logicContractName = "D3C2ImplV1";
+        const logicContractName = "D3CAFImplV1";
         const network = await ethers.provider.getNetwork();
         console.log("network", network);
         const signers = await ethers.getSigners();

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Author: Zainan Victor Zhou et, al w/ D3Serve Labs Inc. <team@d3serve.xyz>
+// Author: D3Serve Labs Inc. <team@d3serve.xyz>
 // Source Code Repo: https://github.com/d3servelabs/d3caf
 
 pragma solidity ^0.8.0;

@@ -2,7 +2,9 @@
   "name": "D3CAF",
   "author": "Zainan Victor Zhou <team@d3serve.xyz>",
   "scripts": {
-    "test": "npx hardhat test"
+    "test": "npx hardhat test",
+    "compile": "npx hardhat compile",
+    "validate": "npx @openzeppelin/upgrades-core validate"
   },
   "license": "Apache-2.0",
   "devDependencies": {

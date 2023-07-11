@@ -2,7 +2,7 @@
 // Author: Zainan Victor Zhou <zzn-ercref@zzn.im>
 // Visit our open source repo: http://zzn.li/ercref
 
-pragma solidity ^0.8.17;
+pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";

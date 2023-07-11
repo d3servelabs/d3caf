@@ -85,20 +85,20 @@ task("d3ns-deploy-d3caf", "Destroy the D3CAFV1 contract.")
         console.log(`Done verifying TransparentUpgradeableProxy at ${d3cafProxy.address}`);
     });
 
-// task("d3ns-verify-proxy", "Destroy the D3CAFV1 contract.")
-//     .addParam("proxy", "The proxy address")
-//     .addParam("admin", "The admin address")
-//     .addParam("logic", "The logic address")
-//     .setAction(async function (taskArguments: TaskArguments, { ethers, run }) {
-//         await run("verify:verify", {
-//             address: taskArguments.proxy,
-//             constructorArguments: [
-//                 taskArguments.logic,
-//                 taskArguments.admin,
-//                 // Initialization data
-//                 [],
-//             ],
-//             // contract: "contracts/proxy/TransparentUpgradeableProxy.sol:TransparentUpgradeableProxy"
-//         }).catch(e => console.log(`Failure ${e} when verifying TransparentUpgradeableProxy at ${taskArguments.proxy}`));
-//         console.log(`Done verifying TransparentUpgradeableProxy at ${taskArguments.proxy}`);
-//     });
+task("d3ns-verify-proxy", "Destroy the D3CAFV1 contract.")
+    .addParam("proxy", "The proxy address")
+    .addParam("admin", "The admin address")
+    .addParam("logic", "The logic address")
+    .setAction(async function (taskArguments: TaskArguments, { ethers, run }) {
+        await run("verify:verify", {
+            address: taskArguments.proxy,
+            constructorArguments: [
+                taskArguments.logic,
+                taskArguments.admin,
+                // Initialization data
+                [],
+            ],
+            // contract: "contracts/proxy/TransparentUpgradeableProxy.sol:TransparentUpgradeableProxy"
+        }).catch(e => console.log(`Failure ${e} when verifying TransparentUpgradeableProxy at ${taskArguments.proxy}`));
+        console.log(`Done verifying TransparentUpgradeableProxy at ${taskArguments.proxy}`);
+    });

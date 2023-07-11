@@ -1,6 +1,5 @@
 import '@nomicfoundation/hardhat-toolbox';
 import '@nomiclabs/hardhat-ethers';
-// import "@nomicfoundation/hardhat-verify";
 import "@openzeppelin/hardhat-upgrades";
 import "@truffle/dashboard-hardhat-plugin";
 import "hardhat-gas-reporter";

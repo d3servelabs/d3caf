@@ -1,6 +1,6 @@
 {
   "name": "D3CAF",
-  "author": "Zainan Victor Zhou <team@d3serve.xyz>",
+  "author": "D3Serve Labs<team@d3serve.xyz>",
   "scripts": {
     "test": "npx hardhat test",
     "compile": "npx hardhat compile",

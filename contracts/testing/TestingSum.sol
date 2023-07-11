@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-// Author: Zainan Victor Zhou <zzn-ercref@zzn.im>
-// Visit our open source repo: http://zzn.li/ercref
+// Author: Zainan Victor Zhou et, al w/ D3Serve Labs Inc. <team@d3serve.xyz>
+// Source Code Repo: https://github.com/d3servelabs/d3caf
+
 pragma solidity ^0.8.0;
 
 contract TestingSum {

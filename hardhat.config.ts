@@ -1,16 +1,25 @@
 import '@nomicfoundation/hardhat-toolbox';
 import '@nomiclabs/hardhat-ethers';
-import '@openzeppelin/hardhat-upgrades';
+// import "@nomicfoundation/hardhat-verify";
+import "@openzeppelin/hardhat-upgrades";
+import "@truffle/dashboard-hardhat-plugin";
+import "hardhat-gas-reporter";
 import { HardhatUserConfig, task } from 'hardhat/config';
 import * as dotenv from 'dotenv';
-import "@nomiclabs/hardhat-ethers";
 import './tasks/prod';
-import "hardhat-gas-reporter";
 
 dotenv.config();
 
 const config: HardhatUserConfig = {
-  solidity: "0.8.17",
+  solidity: {
+    version: "0.8.17",
+    settings: {
+      optimizer: {
+        enabled: true,
+        runs: 200,
+      },
+    },
+  },
   networks: {
     sepolia: {
       url: `https://sepolia.infura.io/v3/${process.env.INFURA_API_KEY}`,
@@ -24,7 +33,11 @@ const config: HardhatUserConfig = {
         mnemonic: process.env.MNEMONIC || "test test test test test test test test test test test junk",
       },
       // gasPrice: 5000000000 // 5 gwei
-    }
+    },
+    dashboard: {
+      url: "http://localhost:24012/rpc",
+      timeout: 1200000,
+    },
   },
   gasReporter: {
     enabled: true,
@@ -32,8 +45,23 @@ const config: HardhatUserConfig = {
     coinmarketcap: process.env.COINMARKETCAP_API_KEY || "",
   },
   etherscan: {
-    apiKey: process.env.ETHERSCAN_API_KEY
-  }
+    apiKey: {
+      mainnet: process.env.ETHERSCAN_API_KEY as string,
+      goerli: process.env.ETHERSCAN_API_KEY as string,
+      dashboard: process.env.ETHERSCAN_API_KEY as string,
+    },
+    customChains: [
+      {
+        network: "dashboard",
+        chainId: 5,
+        urls: {
+          apiURL: "https://api-goerli.etherscan.io/api",
+          browserURL: "https://goerli.etherscan.io"
+        }
+      }
+    ]
+  },
+  // truffle: {}
 };
 
 export default config;

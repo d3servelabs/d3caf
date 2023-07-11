@@ -2,7 +2,8 @@ import { task } from "hardhat/config";
 import type { TaskArguments } from "hardhat/types";
 import { deployByName } from "../utils/deployUtil";
 
-task("d3ns-deploy-D3CAF", "Destroy the D3CAFV1 contract.")
+task("d3ns-deploy-d3caf", "Destroy the D3CAFV1 contract.")
+    .addParam("admin", "Deploy with signers")
     .setAction(async function (taskArguments: TaskArguments, { ethers, run }) {
         const logicContractName = "D3CAFImplV1";
         const network = await ethers.provider.getNetwork();
@@ -28,13 +29,13 @@ task("d3ns-deploy-D3CAF", "Destroy the D3CAFV1 contract.")
             address: logic.address,
         }).catch(e => console.log(`Failure ${e} when verifying ${logicContractName} at ${logic.address}`));
         console.log(`Done verifying ${logicContractName} at ${logic.address}`);
-
+        console.log(`Deploy proxy with admin ${taskArguments.admin}...`);
         const { contract: d3cr2Proxy } = await deployByName(
             ethers,
             "TransparentUpgradeableProxy",
             [
                 logic.address,
-                signers[1].address, // TODO update to configurable admin address.
+                taskArguments.admin,
                 // Initialization data
                 [],
             ]
@@ -54,6 +55,12 @@ task("d3ns-deploy-D3CAF", "Destroy the D3CAFV1 contract.")
         console.log(`Done waiting for the confirmation for contract TransparentUpgradeableProxy at ${d3cr2Proxy.address}`);
         await run("verify:verify", {
             address: d3cr2Proxy.address,
+            constructorArguments: [
+                logic.address,
+                taskArguments.admin,
+                // Initialization data
+                [],
+            ],
         }).catch(e => console.log(`Failure ${e} when verifying TransparentUpgradeableProxy at ${d3cr2Proxy.address}`));
         console.log(`Done verifying TransparentUpgradeableProxy at ${d3cr2Proxy.address}`);
 

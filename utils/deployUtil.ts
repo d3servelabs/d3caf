@@ -1,16 +1,15 @@
 import '@nomicfoundation/hardhat-toolbox';
 import '@nomiclabs/hardhat-ethers';
 import '@openzeppelin/hardhat-upgrades';
-import "@nomiclabs/hardhat-ethers";
 import { HardhatRuntimeEnvironment } from 'hardhat/types';
-import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { Signer } from 'ethers';
 
 export const deployedContracts:any[] = [];
 
 export async function deployByName(
         ethers: HardhatRuntimeEnvironment["ethers"], 
-        contractName: string, parameters: any[],
+        contractName: string, 
+        parameters: any[],
         signer?: Signer
     ): Promise<any> /*deployed address*/ {
     console.log(`Deploying ${contractName} with parameters ${parameters}`);

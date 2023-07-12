@@ -1,3 +1,4 @@
+import { assert } from "console";
 import { task } from "hardhat/config";
 import type { TaskArguments } from "hardhat/types";
 const WAIT_FOR_BLOCK = 3;
@@ -40,15 +41,86 @@ task("d3caf-register", "Register a D3CAFRequest")
         console.log(`Request ${requestId} registered`);
     });
 
-// task("d3caf-mine", "Mine a D3CAFResponse")
-//     .addParam("d3caf", "The D3CAF contract address")
-//     .addParam("request", "Request ID")
-//     .setAction(async function (taskArguments: TaskArguments, { ethers, run, artifacts }) {
-//         const d3caf = await ethers.getContractAt("D3CAFImplV1", taskArguments.d3caf);
-//         console.log(`D3CAF at ${d3caf.address}`);
-//         console.log(`taskArguments.request ${taskArguments.request}`);
-//         // const request = await d3caf.getCreate2Request(taskArguments.request);
-//         const owner = await  d3caf.owner();
-//         console.log(`owner ${owner}`);
-//         // console.log(`request`, request);
-//     });
+task("d3caf-mine", "Mine a D3CAFResponse")
+    .addParam("d3caf", "The D3CAF contract address")
+    .addParam("request", "Request ID")
+    .addParam("solver", "Solver address")
+    .addFlag("submit", "Should the mined result be submitted?")
+    .setAction(async function (taskArguments: TaskArguments, { ethers, run, artifacts }) {
+        const requester = (await ethers.getSigners())[0];
+        const d3caf = await ethers.getContractAt("D3CAFImplV1", taskArguments.d3caf);
+        const request = await d3caf.connect(requester).getCreate2Request(taskArguments.request);
+        console.log(`request`, request);
+
+        let currentBestSalt = await d3caf.connect(requester).getCurrentBestSalt(taskArguments.request);
+        let currentBestAddress = ethers.utils.getCreate2Address
+        (
+            request.factory,
+            currentBestSalt,
+            request.bytecodeHash,
+        );
+        console.log(`currentBestAddress: `, currentBestAddress);
+        let currentBestAddress2 = await d3caf.connect(requester)
+            .computeAddress(taskArguments.request, currentBestSalt);
+        console.log(`currentBestAddress2: `, currentBestAddress2);
+
+        assert(currentBestAddress === currentBestAddress2, "currentBestAddress != currentBestAddress2");
+
+        console.log(`initBestSalt: `, currentBestSalt);
+        console.log(`initBestAddress: `, currentBestAddress);
+        let i = 1;
+        let currentBestSourceSalt = ethers.utils.hexZeroPad(ethers.BigNumber.from(i).toHexString(), 32);
+        
+        while (true) {
+            const newSourceSalt = 
+                ethers.utils.hexZeroPad(ethers.BigNumber.from(i).toHexString(), 32);
+
+            const newSalt = // keccak256(abi.encodePacked(rewardReceiver, sourceSalt));
+                ethers.utils.keccak256(ethers.utils.concat([taskArguments.solver, newSourceSalt]));
+            console.log(`newSalt: `, newSalt);
+
+  
+            const newAddress = ethers.utils.getCreate2Address
+                (
+                    request.factory,
+                    newSalt,
+                    request.bytecodeHash,
+                );
+            // if newAddress is 16 times smaller or equal to currentBestAddress
+            if (ethers.BigNumber.from(newAddress)
+                .lte(ethers.BigNumber.from(currentBestAddress).div(2**4))) {
+                currentBestAddress = newAddress;
+                currentBestSalt = newSalt;
+                currentBestSourceSalt = newSourceSalt;
+                break;
+            } else {
+                console.log(`${i} newAddress: `, newAddress, "current best: ", currentBestAddress);
+            }
+            i++;
+        }
+        
+        console.log(`currentBestSalt: `, currentBestSalt);
+        console.log(`currentBestSourceSalt: `, currentBestSourceSalt);
+        console.log(`currentBestAddress: `, currentBestAddress);
+        const currentBestSalt2 = await d3caf.computeSalt(
+            taskArguments.solver,
+            currentBestSourceSalt,
+        );
+        assert(currentBestSalt === currentBestSalt2, "currentBestSalt != currentBestSalt2");
+        console.log(`currentBestSalt2: `, currentBestSalt2);
+        
+        if (taskArguments.submit) {
+            const tx = await d3caf.connect(requester).registerResponse(
+                taskArguments.request,
+                currentBestSalt,
+                {gasLimit: 1000000}
+            );
+            console.log(`Submitting solution... at ${tx.hash}`);
+            const rc = await tx.wait();
+            const event = rc.events?.find((e: any) => e.event === "OnNewSalt");
+            const salt = event?.args?.salt;
+            console.log(`Solution submitted: ${salt}`);
+        }
+        
+
+    });

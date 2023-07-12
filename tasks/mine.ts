@@ -122,5 +122,33 @@ task("d3caf-mine", "Mine a D3CAFResponse")
             console.log(`Solution submitted: ${salt}`);
         }
         
-
     });
+
+
+task("d3caf-claim", "Claim reward")
+.addParam("d3caf", "The D3CAF contract address")
+.addParam("request", "Request ID")
+.addParam("solver", "Solver address")
+.addParam("sourceSalt", "source salt to claim")
+.setAction(async function (taskArguments: TaskArguments, { ethers, run, artifacts }) {
+    const requester = (await ethers.getSigners())[0];
+    const d3caf = await ethers.getContractAt("D3CAFImplV1", taskArguments.d3caf);
+    const request = await d3caf.connect(requester).getCreate2Request(taskArguments.request);
+    console.log(`request`, request);
+    const tx = await d3caf.connect(requester).claimReward(
+        taskArguments.request, 
+        taskArguments.solver, 
+        taskArguments.sourceSalt,
+        {gasLimit: 1000000}
+    );
+    console.log(`Submitting solution... at ${tx.hash}`);
+    const rc = await tx.wait();
+    const event = rc.events?.find((e: any) => e.event === "OnClaimD3CAFReward");
+    const requestId = event?.args?.requestId;
+    const rewardAmount = event?.args?.rewardAmount;
+    const calculatedAddress = event?.args?.calculatedAddress;
+
+    console.log(`Claimed requestId = ${requestId} for rewardAmount = ${rewardAmount} to ${calculatedAddress}`);
+
+});
+

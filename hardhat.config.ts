@@ -7,7 +7,7 @@ import "hardhat-gas-reporter";
 import { HardhatUserConfig, task } from 'hardhat/config';
 import * as dotenv from 'dotenv';
 import './tasks/prod';
-import './tasks/reward';
+import './tasks/mine';
 
 
 dotenv.config();

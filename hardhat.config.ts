@@ -2,10 +2,13 @@ import '@nomicfoundation/hardhat-toolbox';
 import '@nomiclabs/hardhat-ethers';
 import "@openzeppelin/hardhat-upgrades";
 import "@truffle/dashboard-hardhat-plugin";
+import "hardhat-depver";
 import "hardhat-gas-reporter";
 import { HardhatUserConfig, task } from 'hardhat/config';
 import * as dotenv from 'dotenv';
 import './tasks/prod';
+import './tasks/mine';
+
 
 dotenv.config();
 

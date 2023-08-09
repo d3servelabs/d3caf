@@ -8,6 +8,7 @@ import { HardhatUserConfig, task } from 'hardhat/config';
 import * as dotenv from 'dotenv';
 import './tasks/prod';
 import './tasks/mine';
+import './tasks/premine';
 
 
 dotenv.config();
@@ -55,6 +56,7 @@ const config: HardhatUserConfig = {
     apiKey: {
       mainnet: process.env.ETHERSCAN_API_KEY as string,
       goerli: process.env.ETHERSCAN_API_KEY as string,
+      sepolia: process.env.ETHERSCAN_API_KEY as string,
       dashboard: process.env.ETHERSCAN_API_KEY as string,
     },
     customChains: [

@@ -11,7 +11,7 @@ For full introduction, see [Introducing the D3CAF Protocol V1 Beta and Associate
 
 | Contract | Address  |
 | -------- | -------- |
-| D3CAF    | [`0x13ad7efAfAcd463740222186f0f3DE6AD04B6787`](https://etherscan.io/address/0x13ad7efAfAcd463740222186f0f3DE6AD04B6787#code) |
+| D3CAF    | [`0x000000000000c826e64c795924eb735a892bd44b`](https://etherscan.io/address/0x000000000000c826e64c795924eb735a892bd44b#code) |
 | ImplV1   | [`0xcFbD663cf943ACE12646A0f92c53F5B21Db32833`](https://etherscan.io/address/0xcFbD663cf943ACE12646A0f92c53F5B21Db32833#code) |
 | ProxyAdmin | [`0x85Be40f281E31c5B01D5E172bbA472bb27C2b240`](https://etherscan.io/address/0x85Be40f281E31c5B01D5E172bbA472bb27C2b240#code) |
 
